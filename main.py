@@ -1,0 +1,337 @@
+import sys
+import requests
+import pandas as pd
+import random
+from sklearn.tree import DecisionTreeClassifier
+from PyQt5.QtWidgets import QApplication, QWidget, QLabel, QLineEdit, QPushButton, QVBoxLayout, QHBoxLayout, QFrame
+from PyQt5.QtCore import Qt, QTimer
+from PyQt5.QtGui import QPainter, QColor, QLinearGradient, QFont
+
+data = pd.DataFrame([
+    [30, 80, 5, 1008, "Hujan"],
+    [32, 65, 8, 1015, "Cerah"],
+    [28, 90, 4, 1005, "Hujan"],
+    [35, 60, 10, 1018, "Cerah"],
+    [27, 95, 3, 1004, "Hujan"],
+    [33, 70, 7, 1013, "Cerah"]
+], columns=["Suhu", "Kelembapan", "Angin", "Tekanan", "Cuaca"])
+
+x = data[["Suhu", "Kelembapan", "Angin", "Tekanan"]]
+y = data["Cuaca"]
+
+model = DecisionTreeClassifier()
+model.fit(x, y)
+
+api_key = "isi api"
+
+class WeatherBackground(QWidget):
+    def __init__(self):
+        super().__init__()
+        self.weather = "default"
+        self.raindrops = []
+        self.timer = QTimer()
+        self.timer.timeout.connect(self.animate_rain)
+        self.timer.start(40)
+
+    def set_weather(self, weather):
+        self.weather = weather
+
+        if weather == "Hujan":
+            self.raindrops = [[random.randint(0, self.width()), random.randint(0, self.height()), random.randint(8, 16)] for _ in range(100)]
+        else:
+            self.raindrops = []
+
+        self.update()
+
+    def animate_rain(self):
+        if self.weather == "Hujan":
+            for drop in self.raindrops:
+                drop[1] += drop[2]
+
+                if drop[1] > self.height():
+                    drop[0] = random.randint(0, self.width())
+                    drop[1] = random.randint(-100, 0)
+
+            self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+
+        gradient = QLinearGradient(0, 0, self.width(), self.height())
+
+        if self.weather == "Cerah":
+            gradient.setColorAt(0, QColor("#87CEEB"))
+            gradient.setColorAt(1, QColor("#FDE68A"))
+        elif self.weather == "Hujan":
+            gradient.setColorAt(0, QColor("#172554"))
+            gradient.setColorAt(1, QColor("#475569"))
+        else:
+            gradient.setColorAt(0, QColor("#667EEA"))
+            gradient.setColorAt(1, QColor("#764BA2"))
+
+        painter.fillRect(self.rect(), gradient)
+
+        if self.weather == "Cerah":
+            painter.setBrush(QColor("#FACC15"))
+            painter.setPen(Qt.NoPen)
+            painter.drawEllipse(self.width() - 130, 50, 75, 75)
+
+            painter.setBrush(QColor(255, 255, 255, 180))
+            painter.drawEllipse(40, 70, 100, 45)
+            painter.drawEllipse(90, 55, 100, 60)
+            painter.drawEllipse(145, 75, 90, 40)
+
+        elif self.weather == "Hujan":
+            painter.setPen(QColor(147, 197, 253, 150))
+
+            for drop in self.raindrops:
+                painter.drawLine(drop[0], drop[1], drop[0] - 4, drop[1] + 12)
+
+            painter.setBrush(QColor(71, 85, 105, 230))
+            painter.setPen(Qt.NoPen)
+            painter.drawEllipse(100, 55, 100, 45)
+            painter.drawEllipse(145, 40, 110, 60)
+            painter.drawEllipse(195, 60, 90, 40)
+
+class WeatherApp(QWidget):
+    def __init__(self):
+        super().__init__()
+
+        self.setWindowTitle("Weather AI")
+        self.setFixedSize(600, 700)
+
+        self.background = WeatherBackground()
+        self.background.setParent(self)
+        self.background.resize(self.size())
+
+        self.setup_ui()
+
+    def setup_ui(self):
+        main_layout = QVBoxLayout(self)
+        main_layout.setContentsMargins(45, 35, 45, 35)
+        main_layout.setSpacing(15)
+
+        title = QLabel("WEATHER AI")
+        title.setAlignment(Qt.AlignCenter)
+        title.setStyleSheet("""
+            color: white;
+            font-size: 30px;
+            font-weight: 800;
+            letter-spacing: 2px;
+        """)
+
+        subtitle = QLabel("Machine Learning Weather Prediction")
+        subtitle.setAlignment(Qt.AlignCenter)
+        subtitle.setStyleSheet("""
+            color: rgba(255,255,255,220);
+            font-size: 14px;
+        """)
+
+        input_card = QFrame()
+        input_card.setStyleSheet("""
+            QFrame {
+                background: rgba(255,255,255,235);
+                border-radius: 18px;
+            }
+        """)
+
+        input_layout = QHBoxLayout(input_card)
+        input_layout.setContentsMargins(15, 12, 15, 12)
+
+        self.kota_input = QLineEdit()
+        self.kota_input.setPlaceholderText("Search city...")
+        self.kota_input.setStyleSheet("""
+            QLineEdit {
+                background: transparent;
+                border: none;
+                color: #1E293B;
+                font-size: 16px;
+                padding: 8px;
+            }
+        """)
+
+        button = QPushButton("CHECK WEATHER")
+        button.setCursor(Qt.PointingHandCursor)
+        button.setStyleSheet("""
+            QPushButton {
+                background: #4F46E5;
+                color: white;
+                border: none;
+                border-radius: 12px;
+                padding: 12px 20px;
+                font-size: 13px;
+                font-weight: bold;
+            }
+
+            QPushButton:hover {
+                background: #6366F1;
+            }
+
+            QPushButton:pressed {
+                background: #4338CA;
+            }
+        """)
+
+        button.clicked.connect(self.cek_cuaca)
+        self.kota_input.returnPressed.connect(self.cek_cuaca)
+
+        input_layout.addWidget(self.kota_input)
+        input_layout.addWidget(button)
+
+        self.weather_title = QLabel("Enter a city to check the weather")
+        self.weather_title.setAlignment(Qt.AlignCenter)
+        self.weather_title.setStyleSheet("""
+            color: white;
+            font-size: 22px;
+            font-weight: bold;
+        """)
+
+        self.weather_description = QLabel("Real-time weather data powered by OpenWeatherMap")
+        self.weather_description.setAlignment(Qt.AlignCenter)
+        self.weather_description.setStyleSheet("""
+            color: rgba(255,255,255,210);
+            font-size: 13px;
+        """)
+
+        self.temperature = QLabel("--°")
+        self.temperature.setAlignment(Qt.AlignCenter)
+        self.temperature.setStyleSheet("""
+            color: white;
+            font-size: 64px;
+            font-weight: 300;
+        """)
+
+        self.prediction = QLabel("ML PREDICTION")
+        self.prediction.setAlignment(Qt.AlignCenter)
+        self.prediction.setStyleSheet("""
+            background: rgba(255,255,255,235);
+            color: #312E81;
+            border-radius: 14px;
+            padding: 14px;
+            font-size: 18px;
+            font-weight: bold;
+        """)
+
+        stats_layout = QHBoxLayout()
+        stats_layout.setSpacing(10)
+
+        self.humidity_card = self.create_card("HUMIDITY", "-- %")
+        self.wind_card = self.create_card("WIND", "-- m/s")
+        self.pressure_card = self.create_card("PRESSURE", "-- hPa")
+
+        stats_layout.addWidget(self.humidity_card)
+        stats_layout.addWidget(self.wind_card)
+        stats_layout.addWidget(self.pressure_card)
+
+        main_layout.addWidget(title)
+        main_layout.addWidget(subtitle)
+        main_layout.addSpacing(15)
+        main_layout.addWidget(input_card)
+        main_layout.addSpacing(25)
+        main_layout.addWidget(self.weather_title)
+        main_layout.addWidget(self.weather_description)
+        main_layout.addWidget(self.temperature)
+        main_layout.addWidget(self.prediction)
+        main_layout.addSpacing(10)
+        main_layout.addLayout(stats_layout)
+        main_layout.addStretch()
+
+    def create_card(self, title, value):
+        card = QFrame()
+        card.setStyleSheet("""
+            QFrame {
+                background: rgba(255,255,255,225);
+                border-radius: 16px;
+            }
+        """)
+
+        layout = QVBoxLayout(card)
+        layout.setContentsMargins(10, 15, 10, 15)
+
+        title_label = QLabel(title)
+        title_label.setAlignment(Qt.AlignCenter)
+        title_label.setStyleSheet("""
+            color: #64748B;
+            font-size: 10px;
+            font-weight: bold;
+            letter-spacing: 1px;
+        """)
+
+        value_label = QLabel(value)
+        value_label.setAlignment(Qt.AlignCenter)
+        value_label.setStyleSheet("""
+            color: #1E293B;
+            font-size: 17px;
+            font-weight: bold;
+        """)
+
+        layout.addWidget(title_label)
+        layout.addWidget(value_label)
+
+        card.value_label = value_label
+
+        return card
+
+    def cek_cuaca(self):
+        kota = self.kota_input.text().strip()
+
+        if kota == "":
+            self.weather_title.setText("Please enter a city")
+            self.weather_description.setText("Type a city name in the search box")
+            return
+
+        self.weather_title.setText("Loading...")
+        self.weather_description.setText("Getting real-time weather data")
+
+        QApplication.processEvents()
+
+        url = f"https://api.openweathermap.org/data/2.5/weather?q={kota}&appid={api_key}&units=metric"
+
+        try:
+            response = requests.get(url, timeout=10)
+            data_api = response.json()
+
+            if data_api.get("cod") != 200:
+                self.weather_title.setText("City not found")
+                self.weather_description.setText("Try another city name")
+                self.temperature.setText("--°")
+                self.prediction.setText("ML PREDICTION")
+                self.background.set_weather("default")
+                return
+
+            suhu = data_api["main"]["temp"]
+            kelembapan = data_api["main"]["humidity"]
+            angin = data_api["wind"]["speed"]
+            tekanan = data_api["main"]["pressure"]
+
+            hasil = model.predict([[suhu, kelembapan, angin, tekanan]])[0]
+
+            self.weather_title.setText(kota.title())
+            self.weather_description.setText(data_api["weather"][0]["description"].title())
+            self.temperature.setText(f"{suhu:.1f}°")
+
+            self.humidity_card.value_label.setText(f"{kelembapan}%")
+            self.wind_card.value_label.setText(f"{angin:.1f} m/s")
+            self.pressure_card.value_label.setText(f"{tekanan} hPa")
+
+            if hasil == "Cerah":
+                self.prediction.setText("ML PREDICTION   •   CERAH")
+                self.background.set_weather("Cerah")
+                self.weather_description.setText("Clear weather predicted")
+            else:
+                self.prediction.setText("ML PREDICTION   •   HUJAN")
+                self.background.set_weather("Hujan")
+                self.weather_description.setText("Rainy weather predicted")
+
+        except requests.exceptions.Timeout:
+            self.weather_title.setText("Connection timeout")
+            self.weather_description.setText("Please check your internet connection")
+
+        except Exception as e:
+            self.weather_title.setText("Something went wrong")
+            self.weather_description.setText(str(e))
+
+app = QApplication(sys.argv)
+window = WeatherApp()
+window.show()
+sys.exit(app.exec_())
